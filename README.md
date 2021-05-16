@@ -1,5 +1,13 @@
 # uda-gram
-Instagram clone
+
+Create a simple application that is highly available on aws cloud
+
+# Create the VPC for the Infrastructure
+
+```
+aws cloudformation create-stack --stack-name udagram-vpc-stack --template-body file://vpc-stack.yml
+
+```
 
 # Create A Role
 
@@ -8,3 +16,4 @@ Instagram clone
 # Create SecurityGroup
 
 # Create EC2 Instance
+
