@@ -19,6 +19,11 @@ Parameters:
     Description: SSH public key to login to instance
     Type: String
     Default: uda-keypair
+  LaunchTemplateVersion:
+    Description: Version of launch template in use
+    Type: Number
+    Default: 1
+
 Resources:
   #instace profile contains the IAM Role name(s) that we want to associate to our auto scaling EC2 Servers
   InstanceProfile:
@@ -146,33 +151,79 @@ Resources:
       Tags:
         - Key: Name
           Value: UdagramSecgroup
-
-  UdagramInstance:
-    Type: AWS::EC2::Instance
+  
+  # EC2 Instance template
+  WebappInstanceTemplate:
+    Type: AWS::EC2::LaunchTemplate
     Properties:
-      InstanceType: !Ref InstanceType
-      ImageId: !Ref ImageId
-      KeyName: !Ref KeyName
-      IamInstanceProfile: !Ref InstanceProfile
-      SubnetId:
-        Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-PUB-SN-A
-      AvailabilityZone:
-        Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-PUB-SN-AZ-A
-      SecurityGroupIds:
-      - Ref: UdagramSG
+      LaunchTemplateName: !Sub ${ProjectName}-${EnvironmentName}-WEB-APP-LaunchTemplate
+      LaunchTemplateData:
+        ImageId: !Ref ImageId
+        KeyName: !Ref KeyName
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt
+            - InstanceProfile
+            - Arn
+        SecurityGroupIds:
+        - !Ref UdagramSG
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install unzip awscli -y
+            yum install httpd -y
+            systemctl start httpd.service
+            cd /var/www/html
+            aws s3 cp s3://udacity-demo-1/udacity.zip .
+            unzip -o udacity.zip
+        
+  # EC2 Autoscaling group
+  WebappAutoscalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+      - Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-PUB-NETS
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebappInstanceTemplate
+        Version: !Ref LaunchTemplateVersion
+      MinSize: 1
+      MaxSize: 5
+      TargetGroupARNs:
+      - !Ref WebappTargetGroup
+      HealthCheckGracePeriod: 120
+      HealthCheckType: ELB
       Tags:
         - Key: Name
-          Value: UdagramEc2Instance
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          yum update -y
-          yum install unzip awscli -y
-          yum install httpd -y
-          systemctl start httpd.service
-          cd /var/www/html
-          aws s3 cp s3://udacity-demo-1/udacity.zip .
-          unzip -o udacity.zip
+          Value: !Sub ${ProjectName}-${EnvironmentName}-Webapp
+          PropagateAtLaunch: Yes
+
+  # UdagramInstance:
+  #   Type: AWS::EC2::Instance
+  #   Properties:
+  #     InstanceType: !Ref InstanceType
+  #     ImageId: !Ref ImageId
+  #     KeyName: !Ref KeyName
+  #     IamInstanceProfile: !Ref InstanceProfile
+  #     SubnetId:
+  #       Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-PUB-SN-A
+  #     AvailabilityZone:
+  #       Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-PUB-SN-AZ-A
+  #     SecurityGroupIds:
+  #     - Ref: UdagramSG
+  #     Tags:
+  #       - Key: Name
+  #         Value: UdagramEc2Instance
+  #     UserData:
+  #       Fn::Base64: !Sub |
+  #         #!/bin/bash
+  #         yum update -y
+  #         yum install unzip awscli -y
+  #         yum install httpd -y
+  #         systemctl start httpd.service
+  #         cd /var/www/html
+  #         aws s3 cp s3://udacity-demo-1/udacity.zip .
+  #         unzip -o udacity.zip
         
 Outputs:
   InstanceDNS:
