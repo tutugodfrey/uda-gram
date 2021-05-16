@@ -17,3 +17,4 @@ aws cloudformation create-stack --stack-name udagram-vpc-stack --template-body f
 
 # Create EC2 Instance
 
+# Add Load Balancer to stack
