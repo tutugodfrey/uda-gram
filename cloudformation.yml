@@ -1,0 +1,105 @@
+Parameters:
+  ImageId:
+    Description: Image Id for EC2 instance
+    Type: String
+    Default: ami-047a51fa27710816e
+  InstanceType:
+    Description: Instance type defines the capabilities of EC2 instances
+    Type: String
+    Default: t2.micro
+  KeyName:
+    Description: SSH public key to login to instance
+    Type: String
+    Default: uda-keypair
+Resources:
+  #instace profile contains the IAM Role name(s) that we want to associate to our auto scaling EC2 Servers
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref Ec2IamRole
+
+  Ec2IamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+
+  S3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: Udagrams3InstancePolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: 's3:*'
+            Resource: '*'
+      Roles:
+      - !Ref Ec2IamRole
+
+  UdagramSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow ssh port 22 and http port 80
+      VpcId: vpc-a8820dd5
+      SecurityGroupIngress:
+        - FromPort: 80
+          ToPort: 80
+          IpProtocol: TCP
+          CidrIp: 0.0.0.0/0
+        - FromPort: 22
+          ToPort: 22
+          IpProtocol: TCP
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - FromPort: -1
+          ToPort: -1
+          IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: UdagramSecgroup
+  
+  UdagramInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref ImageId
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: subnet-300b7211
+      AvailabilityZone: us-east-1a
+      SecurityGroupIds:
+      - Ref: UdagramSG
+      Tags:
+        - Key: Name
+          Value: UdagramEc2Instance
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install unzip awscli -y
+          yum install httpd -y
+          systemctl start httpd.service
+          cd /var/www/html
+          aws s3 cp s3://udacity-demo-1/udacity.zip .
+          unzip -o udacity.zip
+        
+Outputs:
+  InstanceDNS:
+    Description: DNS of the deployed instance
+    Value: 
+      !Join ['', [http://, Fn::GetAtt: [UdagramInstance, PublicDnsName]]]
+
+  InstancePublicIp: 
+    Description: Instance Public 
+    Value: !GetAtt UdagramInstance.PublicIp
+  
