@@ -1,4 +1,12 @@
 Parameters:
+  ProjectName:
+    Description: Project template is been applied to.
+    Type: String
+    Default: Udagram
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resources
+    Type: String
+    Default: Dev
   ImageId:
     Description: Image Id for EC2 instance
     Type: String
@@ -45,11 +53,82 @@ Resources:
       Roles:
       - !Ref Ec2IamRole
 
+  UdagramLBSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow ssh port 22 and http port 80
+      VpcId:
+        Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-VPCID
+      SecurityGroupIngress:
+        - FromPort: 80
+          ToPort: 80
+          IpProtocol: TCP
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - FromPort: 80
+          ToPort: 80
+          IpProtocol: TCP
+          CidrIp: 
+            Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-VpcCIDR
+      Tags:
+        - Key: Name
+          Value: UdagramSecgroup
+  
+  # Provision a Load Balancer in Public subnets
+  UdagramLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+      - Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-PUB-SN-A
+      - Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-PUB-SN-B
+      SecurityGroups:
+      - Ref:  UdagramLBSG
+  
+  LBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref WebappTargetGroup
+      LoadBalancerArn:
+         Ref: UdagramLoadBalancer
+      Port: 80
+      Protocol: HTTP
+          
+  ALBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref WebappTargetGroup
+      Conditions:
+      - Field: path-pattern
+        Values: [/]
+      ListenerArn: !Ref LBListener
+      Priority: 1
+  
+  WebappTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 8
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 10
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: ${ProjectName}-${EnvironmentName}-VPCID
+      
+  
   UdagramSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow ssh port 22 and http port 80
-      VpcId: vpc-a8820dd5
+      VpcId: 
+        Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-VPCID
       SecurityGroupIngress:
         - FromPort: 80
           ToPort: 80
@@ -67,7 +146,7 @@ Resources:
       Tags:
         - Key: Name
           Value: UdagramSecgroup
-  
+
   UdagramInstance:
     Type: AWS::EC2::Instance
     Properties:
@@ -75,8 +154,10 @@ Resources:
       ImageId: !Ref ImageId
       KeyName: !Ref KeyName
       IamInstanceProfile: !Ref InstanceProfile
-      SubnetId: subnet-300b7211
-      AvailabilityZone: us-east-1a
+      SubnetId:
+        Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-PUB-SN-A
+      AvailabilityZone:
+        Fn::ImportValue: !Sub ${ProjectName}-${EnvironmentName}-PUB-SN-AZ-A
       SecurityGroupIds:
       - Ref: UdagramSG
       Tags:
@@ -102,4 +183,9 @@ Outputs:
   InstancePublicIp: 
     Description: Instance Public 
     Value: !GetAtt UdagramInstance.PublicIp
+  
+  LoadBalancerDNS:
+    Description: Load Balancer DNS Name to access the website
+    Value: 
+      !Join ['', [http://, Fn::GetAtt: [ UdagramLoadBalancer, DNSName ]]]
   
